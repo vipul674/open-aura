@@ -43,6 +43,7 @@ export function AuraToolkit({ profile }: { profile: ProfileResponse }) {
     ...item,
     name: `Skill · ${item.name}`,
   }))].sort((left, right) => right.count - left.count || (left.name < right.name ? -1 : 1));
+  const inferredSkills = (toolkit.inferred_skills ?? []).slice(0, 8);
 
   return (
     <section className="mt-8" aria-labelledby="aura-toolkit-title">
@@ -84,6 +85,24 @@ export function AuraToolkit({ profile }: { profile: ProfileResponse }) {
               {card.subtitle}
             </p>
             <RankedList entries={card.entries} empty={card.empty} />
+            {card.title === "Tools & skills" && inferredSkills.length > 0 && (
+              <div className="mt-4">
+                <p className="mb-2 font-mono text-[10px] uppercase tracking-[.12em] text-[var(--vibecoder-text-secondary)]">
+                  Inferred skills
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {inferredSkills.map((s) => (
+                    <span
+                      key={s.name}
+                      title="Inferred from scored sessions"
+                      className="rounded-full border border-[rgba(245,158,11,.66)] bg-[rgba(245,158,11,.18)] px-2 py-0.5 font-mono text-[10px] text-[#f59e0b]"
+                    >
+                      {s.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </article>
         ))}
       </div>
