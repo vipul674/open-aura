@@ -212,6 +212,48 @@ def _sorted_counts(counts: dict[str, int]) -> list[dict[str, Any]]:
     ]
 
 
+def _accumulate_inferred(
+    acc: dict[str, dict[str, Any]],
+    inferred_skills: list[Any],
+    recency: float,
+) -> None:
+    """Fold one session's inferred skills into a weight/observation bucket.
+
+    Reads the (defensive, unnormalized) dict shape — stored JSONB is already
+    normalized by `normalize_inferred_skills`, but a legacy/hand-built row may
+    not be. Bucket key is the casefolded name.
+    """
+    for item in inferred_skills:
+        payload = _dict(item)
+        name = _clean_label(payload.get("name"), limit=40)
+        if not name:
+            continue
+        canonical = name.casefold()
+        try:
+            confidence = max(0.0, min(float(payload.get("confidence", 0)), 1.0))
+        except (TypeError, ValueError):
+            continue
+        bucket = acc.setdefault(
+            canonical, {"name": name, "weight": 0.0, "observations": 0}
+        )
+        bucket["weight"] += confidence * SOURCE_WEIGHTS["inferred"] * recency
+        bucket["observations"] += 1
+
+
+def _top_skills(
+    acc: dict[str, dict[str, Any]],
+    measured: set[str],
+    topn: int,
+) -> list[dict[str, Any]]:
+    """Rank accumulated skills by weight desc (locale-safe name tiebreak),
+    skipping any name that was also measured. Returns {name, count} entries."""
+    ranked = sorted(
+        (bucket for key, bucket in acc.items() if key not in measured),
+        key=lambda b: (-b["weight"], b["name"].casefold()),
+    )[:topn]
+    return [{"name": b["name"], "count": b["observations"]} for b in ranked]
+
+
 def _iter_string_values(value: Any) -> Iterable[str]:
     if isinstance(value, dict):
         for key in value:
@@ -236,6 +278,8 @@ def aggregate_profile_facts(
     tool_counts: dict[str, int] = defaultdict(int)
     skill_counts: dict[str, int] = defaultdict(int)
     mcp_counts: dict[str, int] = defaultdict(int)
+    inferred_acc: dict[str, dict[str, Any]] = {}
+    measured_skill_names: set[str] = set()
     projects: dict[str, dict[str, Any]] = {}
 
     for row in rows:
@@ -243,6 +287,10 @@ def aggregate_profile_facts(
         telemetry = _dict(row.get("telemetry"))
         facts = _dict(telemetry.get("profile_facts"))
         recency = _recency_weight(row.get("created_at"), safe_now)
+
+        inferred_skills = telemetry.get("inferred_skills")
+        if isinstance(inferred_skills, list):
+            _accumulate_inferred(inferred_acc, inferred_skills, recency)
 
         for key in SCALAR_FACT_KEYS:
             payload = _dict(facts.get(key))
@@ -301,6 +349,7 @@ def aggregate_profile_facts(
             name = _clean_label(raw_name, limit=80)
             if name:
                 skill_counts[name] += 1
+                measured_skill_names.add(name.casefold())
 
         workspace = _dict(evidence.get("workspace_context"))
         for raw_name in _iter_string_values(workspace.get("mcp_servers")):
@@ -319,9 +368,14 @@ def aggregate_profile_facts(
                     "scores": [],
                     "github_urls": set(),
                     "session_count": 0,
+                    "skill_weights": {},
                 },
             )
             project["session_count"] += 1
+            if isinstance(inferred_skills, list):
+                _accumulate_inferred(
+                    project["skill_weights"], inferred_skills, recency
+                )
             repository_url = sanitize_github_repository_url(
                 workspace.get("repository_url")
             )
@@ -361,6 +415,10 @@ def aggregate_profile_facts(
         toolkit["tools"] = _sorted_counts(tool_counts)
     if skill_counts:
         toolkit["skills"] = _sorted_counts(skill_counts)
+    if inferred_acc:
+        toolkit["inferred_skills"] = _top_skills(
+            inferred_acc, measured_skill_names, MAX_INFERRED_SKILLS_TOOLKIT
+        )
     if mcp_counts:
         toolkit["mcp_servers"] = _sorted_counts(mcp_counts)
 
@@ -369,6 +427,11 @@ def aggregate_profile_facts(
         scores = project.pop("scores")
         summaries = project.pop("summaries")
         github_urls = project.pop("github_urls")
+        project_skills = _top_skills(
+            project.pop("skill_weights", {}), measured_skill_names, 4
+        )
+        if project_skills:
+            project["skills"] = project_skills
         if summaries:
             project["summary"] = summaries[0]
         if len(github_urls) == 1:

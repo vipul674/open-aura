@@ -31,12 +31,16 @@ def row(
     repository: str | None = None,
     repository_url: str | None = None,
     project_summary: str | None = None,
+    inferred_skills: list[dict] | None = None,
 ) -> dict:
     local_stats: dict = {}
     if tools is not None:
         local_stats["tools_used"] = tools
     if skills is not None:
         local_stats["skills_used"] = skills
+    telemetry: dict = {"profile_facts": facts or {}}
+    if inferred_skills is not None:
+        telemetry["inferred_skills"] = inferred_skills
     workspace_context: dict = {}
     if mcp_servers is not None:
         workspace_context["mcp_servers"] = mcp_servers
@@ -50,7 +54,7 @@ def row(
         "created_at": created_at,
         "aura_score": aura_score,
         "source": source,
-        "telemetry": {"profile_facts": facts or {}},
+        "telemetry": telemetry,
         "evidence": {
             "source": source,
             "model": model,
@@ -367,6 +371,70 @@ class AggregationTests(unittest.TestCase):
             now=NOW,
         )["projects"][0]
         self.assertNotIn("github_url", project)
+
+    def test_toolkit_inferred_skills_are_ranked_by_weight(self) -> None:
+        rows = [
+            row(
+                created_at="2026-07-25T09:00:00Z",
+                inferred_skills=[
+                    {"name": "langchain", "confidence": 0.9, "evidence": "e"},
+                    {"name": "mcp", "confidence": 0.8, "evidence": "e"},
+                ],
+            ),
+            row(
+                created_at="2026-07-24T09:00:00Z",
+                inferred_skills=[
+                    {"name": "langchain", "confidence": 1.0, "evidence": "e"},
+                ],
+            ),
+        ]
+        toolkit = aggregate_profile_facts(rows, now=NOW)["toolkit"]
+        names = [s["name"] for s in toolkit["inferred_skills"]]
+        self.assertEqual(names, ["langchain", "mcp"])  # higher total weight first
+        self.assertEqual(toolkit["inferred_skills"][0]["count"], 2)
+
+    def test_measured_skill_wins_and_is_excluded_from_inferred(self) -> None:
+        rows = [
+            row(
+                created_at="2026-07-25T09:00:00Z",
+                skills=["code-review"],
+                inferred_skills=[
+                    {"name": "code-review", "confidence": 0.9, "evidence": "e"},
+                    {"name": "testing", "confidence": 0.8, "evidence": "e"},
+                ],
+            ),
+        ]
+        toolkit = aggregate_profile_facts(rows, now=NOW)["toolkit"]
+        names = [s["name"] for s in toolkit["inferred_skills"]]
+        self.assertEqual(names, ["testing"])
+        self.assertEqual(toolkit["skills"][0]["name"], "code-review")
+
+    def test_project_skills_are_top_four(self) -> None:
+        rows = [
+            row(
+                created_at="2026-07-25T09:00:00Z",
+                repository="open-aura",
+                inferred_skills=[
+                    {"name": "a", "confidence": 1.0, "evidence": "e"},
+                    {"name": "b", "confidence": 1.0, "evidence": "e"},
+                    {"name": "c", "confidence": 1.0, "evidence": "e"},
+                    {"name": "d", "confidence": 1.0, "evidence": "e"},
+                    {"name": "e", "confidence": 0.5, "evidence": "e"},
+                ],
+            ),
+            row(
+                created_at="2026-07-24T09:00:00Z",
+                repository="open-aura",
+                inferred_skills=[
+                    {"name": "a", "confidence": 1.0, "evidence": "e"},
+                ],
+            ),
+        ]
+        project = aggregate_profile_facts(rows, now=NOW)["projects"][0]
+        self.assertEqual(len(project["skills"]), 4)
+        self.assertEqual(project["skills"][0]["name"], "a")
+        self.assertEqual(project["skills"][0]["count"], 2)
+        self.assertNotIn("e", [s["name"] for s in project["skills"]])
 
 
 if __name__ == "__main__":
