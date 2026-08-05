@@ -39,7 +39,7 @@ from .aura_signal_extractor import (
     session_fingerprint,
 )
 from .pfg_client import ground_session as pfg_ground_session
-from .aura_profile_facts import normalize_inferred_profile_facts
+from .aura_profile_facts import normalize_inferred_profile_facts, normalize_inferred_skills
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +336,9 @@ class AuraScoringService(AuraScorer):
         )
         if profile_facts:
             telemetry["profile_facts"] = profile_facts
+        inferred_skills = normalize_inferred_skills(llm_response.get("skills"))
+        if inferred_skills:
+            telemetry["inferred_skills"] = inferred_skills
         llm_cards = self._extract_llm_cards(llm_response, modality)
         # Lifecycle stages the scoring LLM detected (robust to phrasing). Unioned
         # with the deterministic floor inside build_session_cards for the
@@ -673,6 +676,13 @@ class AuraScoringService(AuraScorer):
                     "evidence": "short explanation",
                 },
             },
+            "skills": [
+                {
+                    "name": "short skill/tool/tech evidenced here",
+                    "confidence": 0.0,
+                    "evidence": "1 short sentence from redacted evidence",
+                }
+            ],
             "pfg_check_tips": [],
         }
         parts.append("")
@@ -689,6 +699,10 @@ class AuraScoringService(AuraScorer):
         parts.append("- `profile_facts` are optional in substance: use an empty string and "
         "0 confidence when the redacted evidence does not support a fact. "
         "Never invent location, availability, or experience.")
+        parts.append("- `skills`: name ONLY skills/tools/technologies the transcript or "
+        "files actually evidence. Return an EMPTY list when none. Never invent, "
+        "never copy marketing puffery. Max 8 items. Each confidence is a float "
+        "in [0.0, 1.0].")
         parts.append("- Output ONLY the JSON object, no prose before or after.")
 
         return "\n".join(parts)
