@@ -671,6 +671,15 @@ export function AuraProfile({
                   {typeof totalTokens === 'number' && totalTokens > 0 && (
                     <MonoChip size="md">{formatCompact(totalTokens)} TOKENS</MonoChip>
                   )}
+                  {!isPublic && (profile.toolkit?.inferred_skills ?? []).slice(0, 4).map((s) => (
+                    <span
+                      key={s.name}
+                      title="Inferred from scored sessions"
+                      className="rounded-full border border-[rgba(245,158,11,.66)] bg-[rgba(245,158,11,.18)] px-2 py-0.5 font-mono text-[10px] text-[#f59e0b]"
+                    >
+                      {s.name}
+                    </span>
+                  ))}
                 </>
               )}
             </div>
