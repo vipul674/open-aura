@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from src.services.aura.aura_profile_facts import (
     aggregate_profile_facts,
     normalize_inferred_profile_facts,
+    normalize_inferred_skills,
     sanitize_github_repository_url,
     sanitize_mcp_name,
     sanitize_repository_name,
@@ -156,6 +157,37 @@ class SanitizationTests(unittest.TestCase):
         self.assertEqual(normalized["headline"]["source"], "inferred")
         self.assertNotIn("location", normalized)
         self.assertNotIn("unknown_key", normalized)
+
+
+class InferredSkillSanitizationTests(unittest.TestCase):
+    def test_normalize_inferred_skills_is_typed_bounded_and_secret_free(self) -> None:
+        normalized = normalize_inferred_skills(
+            [
+                {"name": "  3D rendering", "confidence": 1.8, "evidence": "Meshing work."},
+                {"name": "api_key=leak", "confidence": 0.9, "evidence": "reject"},
+                {"name": "  ", "confidence": 0.5, "evidence": "blank"},
+                {"name": "MCP-integrations", "confidence": 0.3, "evidence": "server work."},
+                {"name": "3D rendering", "confidence": 0.2, "evidence": "duplicate"},
+            ]
+        )
+        self.assertEqual(len(normalized), 2)
+        self.assertEqual(normalized[0]["name"], "3D rendering")
+        self.assertEqual(normalized[0]["confidence"], 1.0)  # clamped
+        self.assertEqual(normalized[0]["source"], "inferred")
+        names = [s["name"] for s in normalized]
+        self.assertNotIn("api_key=leak", names)
+
+    def test_normalize_inferred_skills_caps_and_handles_bad_input(self) -> None:
+        self.assertEqual(normalize_inferred_skills("not-a-list"), [])
+        self.assertEqual(
+            normalize_inferred_skills([{"name": "x"}]),
+            [{"name": "x", "confidence": 0.0, "source": "inferred", "evidence": ""}],
+        )
+        result = normalize_inferred_skills(
+            [{"name": f"skill-{i}", "confidence": 0.8} for i in range(20)]
+        )
+        self.assertEqual(len(result), 8)
+        self.assertEqual(len({s["name"] for s in result}), 8)
 
 
 class AggregationTests(unittest.TestCase):

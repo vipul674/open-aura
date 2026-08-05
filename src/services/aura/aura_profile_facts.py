@@ -143,6 +143,45 @@ def normalize_inferred_profile_facts(value: Any) -> dict[str, dict[str, Any]]:
     return normalized
 
 
+MAX_INFERRED_SKILLS_PER_SESSION = 8
+MAX_INFERRED_SKILLS_TOOLKIT = 50
+
+
+def normalize_inferred_skills(value: Any) -> list[dict[str, Any]]:
+    """Validate the scoring model's per-session inferred skills.
+
+    Each item -> {name, confidence (0-1), source: 'inferred', evidence}. Skips
+    blank/secret-like names, dedupes case-insensitively, clamps confidence, and
+    caps the list — the same guardrails as normalize_inferred_profile_facts.
+    """
+    raw = value if isinstance(value, list) else []
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if len(normalized) >= MAX_INFERRED_SKILLS_PER_SESSION:
+            break
+        payload = _dict(item)
+        name = _clean_label(payload.get("name"), limit=40)
+        if not name:
+            continue
+        canonical = name.casefold()
+        if canonical in seen:
+            continue
+        try:
+            confidence = max(0.0, min(float(payload.get("confidence", 0)), 1.0))
+        except (TypeError, ValueError):
+            continue
+        evidence = _clean_label(payload.get("evidence"), limit=240) or ""
+        seen.add(canonical)
+        normalized.append({
+            "name": name,
+            "confidence": confidence,
+            "source": "inferred",
+            "evidence": evidence,
+        })
+    return normalized
+
+
 def _parse_timestamp(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         parsed = value
