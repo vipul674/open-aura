@@ -70,6 +70,7 @@ export interface AuraToolkit {
   tools?: ToolkitEntry[];
   skills?: ToolkitEntry[];
   mcp_servers?: ToolkitEntry[];
+  inferred_skills?: ToolkitEntry[];
 }
 
 export interface AuraProject {
@@ -78,6 +79,8 @@ export interface AuraProject {
   session_count: number;
   aura_score: number;
   github_url?: string;
+  // LLM-inferred skills for this project, ranked by evidence weight (top ~4).
+  skills?: ToolkitEntry[];
 }
 
 export interface ProfileResponse {
