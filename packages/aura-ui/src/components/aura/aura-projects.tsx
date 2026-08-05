@@ -67,6 +67,21 @@ export function AuraProjects({ projects }: { projects: AuraProject[] }) {
               <p className="mt-2 text-sm leading-relaxed text-[var(--vibecoder-text-secondary)]">
                 {project.summary || "Project context observed across scored sessions."}
               </p>
+              {project.skills?.length ? (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-[.12em] text-[var(--vibecoder-text-secondary)]">
+                    Skills
+                  </span>
+                  {project.skills.map((skill) => (
+                    <span
+                      key={skill.name}
+                      className="rounded-lg border border-[rgba(0,230,118,.28)] bg-[rgba(0,230,118,.08)] px-2 py-0.5 font-mono text-[10px] text-[var(--vibecoder-accent)]"
+                    >
+                      {skill.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-auto flex flex-wrap gap-2 pt-5">
                 <span className="rounded-lg border border-[rgba(0,230,118,.28)] bg-[rgba(0,230,118,.08)] px-2.5 py-1 font-mono text-[10px] text-[var(--vibecoder-accent)]">
                   {project.aura_score.toFixed(1)} PROJECT AURA
